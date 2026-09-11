@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import secrets
-import shutil
 import urllib.error
 import urllib.request
 
@@ -66,6 +65,18 @@ def extract_text(path: Path) -> str:
     raise ValueError("Formato no soportado")
 
 
+def make_chunks(text: str, filename: str):
+    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=120)
+    return splitter.create_documents([text], metadata=[{"source": filename, "filename": filename}])
+
+
+def make_ids(chunks, filename: str):
+    return [
+        hashlib.sha256(f"{filename}:{i}:{chunk.page_content}".encode("utf-8")).hexdigest()
+        for i, chunk in enumerate(chunks)
+    ]
+
+
 def ollama_status() -> dict:
     try:
         with urllib.request.urlopen(f"{OLLAMA_BASE_URL}/api/tags", timeout=3) as response:
@@ -120,30 +131,39 @@ def upload(file: UploadFile = File(...), x_api_key: str | None = Header(default=
 
     destination = DOCS_DIR / safe_name
     previous_content = destination.read_bytes() if destination.exists() else None
-    destination.write_bytes(content)
 
     try:
+        destination.write_bytes(content)
         text = extract_text(destination)
         if not text.strip():
             raise ValueError("El documento no contiene texto")
 
-        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=120)
-        chunks = splitter.create_documents([text], metadata=[{"source": safe_name, "filename": safe_name}])
+        new_chunks = make_chunks(text, safe_name)
+        new_ids = make_ids(new_chunks, safe_name)
         store = vectorstore()
-        ids = [hashlib.sha256(f"{safe_name}:{i}:{chunk.page_content}".encode("utf-8")).hexdigest() for i, chunk in enumerate(chunks)]
-
-        # Primero generamos embeddings y agregamos el nuevo contenido. Solo después
-        # de que Chroma confirme la escritura eliminamos los fragmentos anteriores.
-        store.add_documents(chunks, ids=ids)
         store.delete(where={"source": safe_name})
-        store.add_documents(chunks, ids=ids)
+        store.add_documents(new_chunks, ids=new_ids)
 
-        return {"ok": True, "filename": safe_name, "chunks": len(chunks), "replaced_existing": previous_content is not None}
+        return {
+            "ok": True,
+            "filename": safe_name,
+            "chunks": len(new_chunks),
+            "replaced_existing": previous_content is not None,
+        }
     except Exception as exc:
+        # Restauramos el archivo físico y, si había versión anterior, intentamos
+        # reconstruir también sus fragmentos en Chroma.
+        destination.unlink(missing_ok=True)
         if previous_content is not None:
             destination.write_bytes(previous_content)
-        else:
-            destination.unlink(missing_ok=True)
+            try:
+                old_text = extract_text(destination)
+                old_chunks = make_chunks(old_text, safe_name)
+                store = vectorstore()
+                store.delete(where={"source": safe_name})
+                store.add_documents(old_chunks, ids=make_ids(old_chunks, safe_name))
+            except Exception:
+                pass
         raise HTTPException(500, f"No se pudo indexar el documento: {exc}") from exc
 
 
