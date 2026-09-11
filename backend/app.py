@@ -25,7 +25,7 @@ API_KEY = os.getenv("BIBLIOTECARIO_API_KEY", "").strip()
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Bibliotecario API", version="0.3.0")
+app = FastAPI(title="Bibliotecario API", version="0.3.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -82,7 +82,16 @@ def ollama_status() -> dict:
         with urllib.request.urlopen(f"{OLLAMA_BASE_URL}/api/tags", timeout=3) as response:
             payload = json.loads(response.read().decode("utf-8"))
         models = [item.get("name") for item in payload.get("models", [])]
-        return {"ok": True, "available": True, "models": models, "embedding_model_found": EMBED_MODEL in models}
+        configured = EMBED_MODEL.strip().lower()
+        found = any(
+            name and (
+                name.strip().lower() == configured
+                or name.strip().lower() == f"{configured}:latest"
+                or name.strip().lower().split(":", 1)[0] == configured
+            )
+            for name in models
+        )
+        return {"ok": True, "available": True, "models": models, "embedding_model_found": found}
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
         return {"ok": False, "available": False, "models": [], "embedding_model_found": False, "error": str(exc)}
 
@@ -151,8 +160,6 @@ def upload(file: UploadFile = File(...), x_api_key: str | None = Header(default=
             "replaced_existing": previous_content is not None,
         }
     except Exception as exc:
-        # Restauramos el archivo físico y, si había versión anterior, intentamos
-        # reconstruir también sus fragmentos en Chroma.
         destination.unlink(missing_ok=True)
         if previous_content is not None:
             destination.write_bytes(previous_content)
