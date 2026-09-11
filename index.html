@@ -13,8 +13,8 @@
       <span class="status"><i></i> Interfaz lista</span>
     </header>
     <section class="card api-card">
-      <div><p class="eyebrow">CONEXIÓN</p><h2>Conectar API</h2><p>Introduce la URL HTTPS pública del backend. Se guarda solo en este navegador.</p></div>
-      <div class="search-row"><input id="apiUrl" type="url" placeholder="https://tu-api.example.com"><button id="saveApiBtn" class="primary" onclick="document.getElementById('apiUrl').dispatchEvent(new Event('change'))">Guardar</button></div>
+      <div><p class="eyebrow">CONEXIÓN</p><h2>Conectar API</h2><p>Introduce la URL HTTPS pública del backend y, si está protegida, su clave. Los datos se guardan solo en este navegador.</p></div>
+      <div class="search-row"><input id="apiUrl" type="url" placeholder="https://tu-api.example.com"><input id="apiKey" type="password" autocomplete="off" placeholder="Clave API (opcional)"><button id="saveApiBtn" class="primary" onclick="document.getElementById('apiUrl').dispatchEvent(new Event('change'))">Guardar</button></div>
       <code id="apiStatus">API: pendiente de conectar</code>
     </section>
     <section class="grid">
