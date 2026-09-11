@@ -1,6 +1,10 @@
 from pathlib import Path
+import hashlib
+import json
 import os
 import shutil
+import urllib.error
+import urllib.request
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,13 +17,14 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("BIBLIOTECARIO_DATA_DIR", BASE_DIR / "data"))
 DOCS_DIR = DATA_DIR / "documents"
 CHROMA_DIR = DATA_DIR / "chroma"
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+MAX_UPLOAD_BYTES = int(os.getenv("BIBLIOTECARIO_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Bibliotecario API", version="0.1.0")
+app = FastAPI(title="Bibliotecario API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,13 +56,41 @@ def extract_text(path: Path) -> str:
     raise ValueError("Formato no soportado")
 
 
+def ollama_status() -> dict:
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_BASE_URL}/api/tags", timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        models = [item.get("name") for item in payload.get("models", [])]
+        return {"ok": True, "available": True, "models": models, "embedding_model_found": EMBED_MODEL in models}
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        return {"ok": False, "available": False, "models": [], "embedding_model_found": False, "error": str(exc)}
+
+
 @app.get("/api/health")
 def health():
+    ollama = ollama_status()
     return {
-        "ok": True,
+        "ok": ollama["available"] and ollama["embedding_model_found"],
         "service": "bibliotecario",
+        "version": app.version,
         "embedding_model": EMBED_MODEL,
         "data_dir": str(DATA_DIR),
+        "ollama": ollama,
+    }
+
+
+@app.get("/api/documents")
+def documents():
+    files = sorted(
+        [p for p in DOCS_DIR.iterdir() if p.is_file() and p.suffix.lower() in {".md", ".txt", ".docx"}],
+        key=lambda p: p.name.lower(),
+    )
+    return {
+        "count": len(files),
+        "documents": [
+            {"filename": p.name, "bytes": p.stat().st_size}
+            for p in files
+        ],
     }
 
 
@@ -68,20 +101,33 @@ def upload(file: UploadFile = File(...)):
         raise HTTPException(400, "Solo se admiten .md, .txt y .docx")
 
     safe_name = Path(file.filename).name
+    if not safe_name:
+        raise HTTPException(400, "Nombre de archivo inválido")
+
+    content = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"El archivo supera el límite de {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
+
     destination = DOCS_DIR / safe_name
-    with destination.open("wb") as target:
-        shutil.copyfileobj(file.file, target)
+    destination.write_bytes(content)
 
     try:
         text = extract_text(destination)
         if not text.strip():
             raise ValueError("El documento no contiene texto")
+
         splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=120)
         chunks = splitter.create_documents(
             [text], metadata=[{"source": safe_name, "filename": safe_name}]
         )
-        vectorstore().add_documents(chunks)
-        return {"ok": True, "filename": safe_name, "chunks": len(chunks)}
+
+        store = vectorstore()
+        # Reindexar el mismo archivo reemplaza sus fragmentos anteriores.
+        store.delete(where={"source": safe_name})
+        ids = [hashlib.sha256(f"{safe_name}:{i}:{chunk.page_content}".encode("utf-8")).hexdigest() for i, chunk in enumerate(chunks)]
+        store.add_documents(chunks, ids=ids)
+
+        return {"ok": True, "filename": safe_name, "chunks": len(chunks), "replaced_existing": True}
     except Exception as exc:
         destination.unlink(missing_ok=True)
         raise HTTPException(500, f"No se pudo indexar el documento: {exc}") from exc
