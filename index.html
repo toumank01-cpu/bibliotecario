@@ -9,55 +9,27 @@
 <body>
   <main class="app">
     <header class="hero">
-      <div>
-        <p class="eyebrow">BIBLIOTECARIO</p>
-        <h1>Tu biblioteca para la IA</h1>
-        <p class="subtitle">Sube tus documentos, organiza el conocimiento y prepara búsquedas para tu asistente.</p>
-      </div>
+      <div><p class="eyebrow">BIBLIOTECARIO</p><h1>Tu biblioteca para la IA</h1><p class="subtitle">Sube tus documentos, organiza el conocimiento y prepara búsquedas para tu asistente.</p></div>
       <span class="status"><i></i> Interfaz lista</span>
     </header>
-
-    <section class="grid">
-      <article class="card upload-card">
-        <div class="card-head">
-          <div><span class="icon">↑</span><h2>Agregar documentos</h2></div>
-          <span class="badge">MD · DOCX · TXT</span>
-        </div>
-        <label class="dropzone" id="dropzone">
-          <input id="fileInput" type="file" multiple accept=".md,.docx,.txt">
-          <strong>Arrastra tus archivos aquí</strong>
-          <span>o pulsa para seleccionarlos</span>
-        </label>
-        <div id="fileList" class="file-list"></div>
-        <button id="uploadBtn" class="primary" disabled>Preparar archivos</button>
-        <p class="hint">Esta primera versión prepara la interfaz. El almacenamiento y la API se conectarán en el siguiente paso.</p>
-      </article>
-
-      <article class="card search-card">
-        <div class="card-head">
-          <div><span class="icon">⌕</span><h2>Buscar en la biblioteca</h2></div>
-          <span class="badge">RAG</span>
-        </div>
-        <div class="search-row">
-          <input id="query" type="search" placeholder="Ej.: ¿Qué sabemos de Aiko?">
-          <button id="searchBtn" class="primary">Buscar</button>
-        </div>
-        <div id="results" class="results empty">
-          <span class="empty-icon">◌</span>
-          <p>Escribe una consulta para ver aquí los fragmentos relevantes.</p>
-        </div>
-      </article>
-    </section>
-
     <section class="card api-card">
-      <div>
-        <p class="eyebrow">CONEXIÓN</p>
-        <h2>API para ChatGPT</h2>
-        <p>La página quedará preparada para exponer una API HTTPS que devuelva los fragmentos relevantes en JSON. Así ChatGPT podrá consultar la biblioteca sin que tengas que copiar y pegar capítulos enteros.</p>
-      </div>
+      <div><p class="eyebrow">CONEXIÓN</p><h2>Conectar API</h2><p>Introduce la URL HTTPS pública del backend. Se guarda solo en este navegador.</p></div>
+      <div class="search-row"><input id="apiUrl" type="url" placeholder="https://tu-api.example.com"><button id="saveApiBtn" class="primary" onclick="document.getElementById('apiUrl').dispatchEvent(new Event('change'))">Guardar</button></div>
       <code id="apiStatus">API: pendiente de conectar</code>
     </section>
-
+    <section class="grid">
+      <article class="card upload-card">
+        <div class="card-head"><div><span class="icon">↑</span><h2>Agregar documentos</h2></div><span class="badge">MD · DOCX · TXT</span></div>
+        <label class="dropzone" id="dropzone"><input id="fileInput" type="file" multiple accept=".md,.docx,.txt"><strong>Arrastra tus archivos aquí</strong><span>o pulsa para seleccionarlos</span></label>
+        <div id="fileList" class="file-list"></div><button id="uploadBtn" class="primary" disabled>Subir e indexar</button>
+        <p class="hint">Los documentos se envían al backend privado y se indexan con embeddings locales.</p>
+      </article>
+      <article class="card search-card">
+        <div class="card-head"><div><span class="icon">⌕</span><h2>Buscar en la biblioteca</h2></div><span class="badge">RAG</span></div>
+        <div class="search-row"><input id="query" type="search" placeholder="Ej.: ¿Qué sabemos de Aiko?"><button id="searchBtn" class="primary">Buscar</button></div>
+        <div id="results" class="results empty"><span class="empty-icon">◌</span><p>Escribe una consulta para ver aquí los fragmentos relevantes.</p></div>
+      </article>
+    </section>
     <footer>Bibliotecario · proyecto local de conocimiento</footer>
   </main>
   <script src="app.js"></script>
